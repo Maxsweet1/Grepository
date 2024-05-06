@@ -1,0 +1,88 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+// Importing AccessControl to easily manage role-based permissions
+import "@openzeppelin/contracts/access/AccessControl.sol";
+
+// AssetLoader contract inherits from OpenZeppelin's AccessControl to manage roles.
+contract AssetLoader is AccessControl {
+    // Roles defined using keccak256 to generate a unique hash for each role.
+    bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
+    bytes32 public constant LOADER_ROLE = keccak256("LOADER_ROLE");
+
+    // Struct to keep track of each load item
+    struct LoadItem {
+        string assetID;
+        string truckNumber;
+        uint8 bayNumber;
+        address loader;
+        uint256 timestamp;
+        bool signedOff;
+    }
+
+    // Array to store records of all load items
+    LoadItem[] public loadingRecords;
+
+    // Events to log actions on the blockchain
+    event LoaderAuthorized(address indexed loader, uint8 bayNumber);
+    event LoadRecordAdded(uint recordIndex, string assetID, uint8 bayNumber);
+    event LoadSignedOff(uint recordIndex);
+    event LoaderRevoked(address indexed loader);
+
+    // Constructor to set up the initial manager role
+    constructor() {
+        _grantRole(MANAGER_ROLE, msg.sender);
+    }
+
+    // Modifier to restrict certain functions to users with the manager role
+    modifier onlyManager() {
+        require(hasRole(MANAGER_ROLE, msg.sender), "AssetLoader: Caller is not a manager");
+        _;
+    }
+
+    // Function to authorize a loader for a specific bay, restricted to managers
+    function authorizeLoader(address loader, uint8 bayNumber) public onlyManager {
+        _grantRole(LOADER_ROLE, loader);
+        emit LoaderAuthorized(loader, bayNumber);
+    }
+
+    // Function to revoke a loader's authorization, restricted to managers
+    function revokeLoader(address loader) public onlyManager {
+        _revokeRole(LOADER_ROLE, loader);
+        emit LoaderRevoked(loader);
+    }
+
+    // Function for a loader to add a load record if they are authorized for the bay
+    function addLoadRecord(string calldata assetID, string calldata truckNumber, uint8 bayNumber) public {
+        require(hasRole(LOADER_ROLE, msg.sender), "AssetLoader: Loader not authorized for this bay");
+        LoadItem memory newRecord = LoadItem({
+            assetID: assetID,
+            truckNumber: truckNumber,
+            bayNumber: bayNumber,
+            loader: msg.sender,
+            timestamp: block.timestamp,
+            signedOff: false
+        });
+
+        loadingRecords.push(newRecord);
+        emit LoadRecordAdded(loadingRecords.length - 1, assetID, bayNumber);
+    }
+
+    // Function for the manager to sign off on a load record
+    function signOffLoad(uint256 recordIndex) public onlyManager {
+        require(recordIndex < loadingRecords.length, "AssetLoader: Record index out of bounds");
+        loadingRecords[recordIndex].signedOff = true;
+        emit LoadSignedOff(recordIndex);
+    }
+
+    // Function to retrieve a specific load record
+    function getLoadRecord(uint256 index) public view returns (LoadItem memory) {
+        require(index < loadingRecords.length, "AssetLoader: Record index out of bounds");
+        return loadingRecords[index];
+    }
+
+    // Function to retrieve all load records
+    function getLoadingRecords() public view returns (LoadItem[] memory) {
+        return loadingRecords;
+    }
+}
